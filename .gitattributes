@@ -1,0 +1,8 @@
+# Reproducible line endings across Windows and GitHub.
+* text=auto
+*.bat text eol=crlf
+*.ps1 text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+LICENSE text eol=lf
+.gitattributes text eol=lf

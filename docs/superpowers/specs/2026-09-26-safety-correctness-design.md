@@ -1,0 +1,7 @@
+# Safety/correctness design — win11janitor
+
+User-approved direction: repair audited defects in the existing Windows 11 tweaks, avoid reinstalls and destructive debloating, make measurable benefit and user privacy explicit. Keep existing 01-16 batch entrypoints and master runner; no unrequested device-level changes during development.
+
+PowerShell owns all stateful work behind a stable CLI. Audit and Plan are ordinary-user, read-only operations. Apply defaults to the narrow Safe privacy group and requires elevation. Advanced modules that disable user-facing features run only by explicit ID. Experimental legacy performance tweaks that cannot claim repeatable gains are not applied. Every operation stores its original value/state inside a D:-only snapshot before the first write and returns an explicit result. The engine preserves existing stricter privacy policies, rolls back only targets it attempted to change, and reports failure even when diagnostic journaling is unavailable. Restore replays captured state, including previously absent values. Master and individual wrappers exit nonzero on failure. Dry-run does not create backups, require elevation, or mutate the operating system.
+
+Test through subprocesses and a source contract suite without live Apply, alongside PowerShell parsing. Publish measured performance claims only after real A/B benchmarks; retain Defender, Windows Update and hardware-based security by default. Never write temporary project files or backups to C:.
