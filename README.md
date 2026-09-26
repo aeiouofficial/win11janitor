@@ -1,75 +1,76 @@
-# Windows 11 Clean & Atlas OS 16-Module Optimization Suite ⚡
+# win11janitor
 
-[![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com)
-[![Status: Production Ready](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)]()
-[![Modules: 16](https://img.shields.io/badge/Modules-16%20Standalone-blueviolet)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)]()
+Reversible Windows 11 privacy configuration for an existing installation. This project is **not** an FPS accelerator and does not require an OS reinstall, third-party Windows image, destructive debloating, disabling Microsoft Defender, or disabling VBS.
 
-A modular, production-grade optimization suite inspired by the [Atlas OS](https://github.com/Atlas-OS/Atlas) playbook. Designed to eliminate background telemetry, minimize kernel latency, optimize TCP network queues, and maximize gaming and system responsiveness on **existing Windows 10/11 installations without requiring an OS reinstallation or destructive debloating**.
+## Safety and execution
 
----
+- Default master runner previews five Safe privacy modules, requests confirmation, and reports errors rather than unconditionally claiming success.
+- `Audit`, `Plan`, `Apply -WhatIf` and `Restore -WhatIf` do not change Windows settings. Use these first.
+- Before `Apply` changes a Windows setting, it records the original state of *every selected target* in a JSON snapshot inside `D:\win11janitor\.workspace\backups`. The engine attempts an automatic rollback on caught failures; abrupt power loss or process termination requires manual restore from the saved snapshot. Review rollback results because restoration can itself fail.
+- Logs, snapshots, lock files and project temporary files stay inside `D:\win11janitor\.workspace`. Windows naturally persists registry changes on its system drive when you apply them.
+- Optional modules can remove features you use; select them only deliberately. Unsupported performance experiments are **audit-only** and return nonzero on an attempted apply.
+- Elevated HKCU operations affect whichever user account runs the elevated terminal. If UAC asks for another administrator's credentials, do not apply user-specific modules from that other account.
+- Never restore overlapping snapshots out of order; restore the most recent first. Preserve snapshot files.
 
-## 📋 Complete 16-Module Architecture Matrix
+## Module matrix
 
-Every script in this suite is fully self-contained with its own administrator elevation check. You can execute any single script individually or run them all at once using the master runner.
+| ID | Mode | Behavior |
+|---|---|---|
+| 01 | Safe | Use Required diagnostics if unset or less restrictive; preserve an existing stricter zero policy. Home/Pro cannot turn all required diagnostics off. |
+| 02 | Safe | Disable activity-feed publishing and uploading. |
+| 03 | Safe | Disable Start menu web search suggestions for the current account. |
+| 04 | Safe | Disable diagnostic-data tailored experiences, preserving Start application tracking. |
+| 05 | Audit-only | Avoid unsupported global MMCSS/network-priority tweaks. |
+| 06 | Optional | Disable Game DVR capture when you do not need it. |
+| 07 | Optional | Disable DiagTrack, **not SysMain**. |
+| 08 | Optional | Disable Fast Startup while keeping hibernation. |
+| 09 | Audit-only | Preserve the existing NTFS Last Access policy. |
+| 10 | Audit-only | Preserve the existing NTFS 8.3-name policy. |
+| 11 | Audit-only | Preserve TCP auto-tuning, RSS/RSC, ECN and timestamps. |
+| 12 | Audit-only | Do not disable Nagle for every network interface. |
+| 13 | Optional | Disable only the named CEIP and Feedback scheduled tasks where available. |
+| 14 | Audit-only | Preserve ETW diagnostic tracing. |
+| 15 | Audit-only | Preserve adaptive CPU parking and the original power plan. |
+| 16 | Optional | Change pointer acceleration and transparency only; preserve memory compression and kernel paging. |
+| 17 | Safe | Disable the current-user advertising ID. |
 
-| # | Script | Target Subsystem | Description & Technical Operation |
-| :---: | :--- | :--- | :--- |
-| **01** | `01_disable_telemetry.bat` | Diagnostics | Sets `AllowTelemetry=0` in `HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection`. |
-| **02** | `02_disable_activity_history.bat` | Privacy / Timeline | Sets `EnableActivityFeed=0` and `PublishUserActivities=0` under `HKLM:\...\System`. |
-| **03** | `03_disable_bing_start_search.bat` | Windows Shell / Explorer | Disables Bing search keystroke logging in the Start Menu (`DisableSearchBoxSuggestions=1`). |
-| **04** | `04_disable_tailored_experiences.bat` | Privacy / Ads | Disables `TailoredExperiencesWithDiagnosticDataEnabled` and `Start_TrackProgs`. |
-| **05** | `05_multimedia_system_profile.bat` | Scheduler Profile | Sets `NetworkThrottlingIndex=0xffffffff` and `SystemResponsiveness=0` for gaming priority. |
-| **06** | `06_disable_game_dvr.bat` | Xbox / Graphics | Sets `GameDVR_Enabled=0` and `AllowGameDVR=0` to eliminate micro-stutters during gaming. |
-| **07** | `07_disable_background_services.bat` | Windows Services | Stops and disables `SysMain` (Superfetch disk thrashing) and `DiagTrack` telemetry daemons. |
-| **08** | `08_disable_hibernation_faststartup.bat` | Power Architecture | Runs `powercfg /h off` to delete `hiberfil.sys`, freeing gigabytes of SSD space and ending fast startup driver leaks. |
-| **09** | `09_ntfs_disable_last_access.bat` | NTFS Filesystem | Sets `fsutil behavior set disablelastaccess 1` to eliminate disk write overhead whenever files are read. |
-| **10** | `10_ntfs_disable_8dot3_names.bat` | NTFS Filesystem | Sets `fsutil behavior set disable8dot3 1` to prevent legacy 8.3 short filename generation in large directories. |
-| **11** | `11_network_tcp_global_tuning.bat` | TCP/IP Protocol Stack | Configures `netsh int tcp set global` with `rss=enabled`, `rsc=disabled`, and `autotuning=normal`. |
-| **12** | `12_disable_nagles_algorithm.bat` | Network Latency / Ping | Iterates through all adapter GUIDs in registry to set `TcpAckFrequency=1` and `TCPNoDelay=1`. |
-| **13** | `13_disable_telemetry_tasks.bat` | Task Scheduler | Deactivates scheduled telemetry tasks (Compatibility Appraiser, CEIP, DiskDiagnostic, WinSAT). |
-| **14** | `14_disable_etw_autologgers.bat` | Kernel Event Tracing | Stops and sets `Start=0` on `AutoLogger-Diagtrack-Listener` and `SQMLogger` WMI sessions. |
-| **15** | `15_ultimate_performance_coreparking.bat` | CPU & Power Management | Activates the **Ultimate Performance** power plan and sets core parking residency to 100% (`CPMINCORES 100`). |
-| **16** | `16_memory_management_and_raw_input.bat` | Memory / Input / DWM | Disables RAM compression (`Disable-MMAgent`), locks kernel code into physical RAM (`DisablePagingExecutive=1`), removes mouse acceleration curves for 1:1 hardware translation, and disables DWM transparency. |
+The 17 numbered batch files remain compatible launchers; audit-only launchers explicitly refuse to mutate Windows. Audit-only entries document deliberately excluded tweaks; they do not benchmark the excluded settings. They accept extra PowerShell arguments after the module ID, e.g. `-WhatIf -Json`.
 
----
+## Usage
 
-## 🚀 How to Use
+From `D:\win11janitor`. Read-only commands do not require elevation. Use an **elevated terminal** only after reviewing the plan:
 
-### 1-Click Execution (All 16 Modules)
-1. Right-click **`RUN_ALL_OPTIMIZATIONS.bat`**.
-2. Select **Run as administrator**.
-3. Press any key to start.
-4. When prompted at the end, restart your PC to allow kernel, filesystem, and TCP stack changes to take full effect.
+```powershell
+# Inspect and preview without changing Windows:
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Audit -Profile Advanced -Json
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Plan -Profile Safe -Json
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Apply -Profile Safe -WhatIf -Json
 
-### Selective Modular Execution
-Every script (`01` through `16`) is completely independent. If you only want to apply a specific optimization (such as disabling Nagle's algorithm for gaming or disabling Bing search in the Start Menu), simply right-click that specific `.bat` file and select **Run as administrator**.
+# Deliberate changes, from an elevated terminal:
+.\RUN_ALL_OPTIMIZATIONS.bat
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Apply -Module 06
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Apply -Profile Advanced
 
----
+# Replace SNAPSHOT_PATH with the exact path printed when Apply ran:
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Restore -Snapshot SNAPSHOT_PATH -WhatIf
+pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Restore -Snapshot SNAPSHOT_PATH
+```
 
-## 🛡️ Exclusions & Security Notice: Why "The Aggressive Tier" Is Excluded
+`pwsh` is PowerShell 7; legacy launchers use built-in Windows PowerShell 5.1. Exit codes: 0 successful, 1 error/rollback problem, 2 partial apply, 3 unsupported module. Inspect JSON `status` and individual `results`, not just the exit code. A successful dry-run does **not** establish that an elevated Apply/Restore works on every Windows edition.
 
-Atlas OS by default strips critical security defenses:
-- **Disabling Virtualization-Based Security (VBS) / Core Isolation (HVCI)**
-- **Disabling Spectre / Meltdown Speculative Execution CPU Mitigations**
-- **Disabling Windows Defender Antivirus and SmartScreen**
+## Validation and performance
 
-**This suite deliberately excludes these destructive modifications.** These 16 modules deliver ~80–90% of the latency and responsiveness improvements of custom OS playbooks while keeping your security perimeter, hypervisor integrity, and Windows Update functionality completely intact.
+Run tests without modifying Windows settings:
 
----
+```powershell
+$env:TEMP='D:\win11janitor\.workspace\tmp'
+$env:TMP=$env:TEMP
+$env:PYTHONDONTWRITEBYTECODE='1'
+python -m unittest discover -s tests -v
+```
 
-## 🔄 Reversion / Rollback Reference
+A disposable Windows VM with a snapshot is required for the elevated Apply/Restore acceptance gate. Only claim a performance gain when it is measured on the specific PC/workload: boot-to-idle, idle CPU/RAM, frame-time percentiles, application launch times and network throughput/latency. Earlier quantitative performance claims were unsubstantiated and have been removed.
 
-If you ever wish to revert any individual modification:
+References: [Microsoft diagnostic-data policy](https://learn.microsoft.com/en-us/windows/privacy/configure-windows-diagnostic-data-in-your-organization), [MMCSS](https://learn.microsoft.com/en-us/windows/win32/procthread/multimedia-class-scheduler-service), [NTFS behavior](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/fsutil-behavior).
 
-* **Fast Startup / Hibernation:** Run `powercfg /h on` in Admin Command Prompt.
-* **SysMain Service:** Run `Set-Service -Name "SysMain" -StartupType Automatic; Start-Service -Name "SysMain"` in Admin PowerShell.
-* **NTFS Last Access & 8.3 Names:** Run `fsutil behavior set disablelastaccess 0` and `fsutil behavior set disable8dot3 0`.
-* **Power Plan:** Switch back to "Balanced" via Windows Settings -> Power & Battery.
-* **Memory Compression:** Run `Enable-MMAgent -MemoryCompression` in Admin PowerShell.
-* **Mouse Acceleration:** Enable "Enhance pointer precision" under Windows Mouse Settings.
-
----
-
-## 📄 License
-This suite is open-source under the [MIT License](LICENSE).
+License: MIT (see LICENSE).

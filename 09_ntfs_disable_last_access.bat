@@ -1,23 +1,14 @@
 @echo off
-setlocal EnableDelayedExpansion
-
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Administrator privileges required.
-    echo Right-click this script and select "Run as administrator".
-    echo.
-    if /i "%~1" neq "/nopause" pause
-    exit /b 1
+setlocal EnableExtensions
+rem Compatibility entrypoint; never executes direct registry/service/network tweaks.
+set "TEMP=%~dp0.workspace\tmp"
+set "TMP=%TEMP%"
+set "TMPDIR=%TEMP%"
+if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
+if not exist "%TEMP%" (
+    echo [ERROR] Cannot create D: workspace temp directory.
+    endlocal & exit /b 10
 )
-
-echo ========================================================
-echo [09] Disabling NTFS Last Access Timestamp Writes
-echo ========================================================
-
-echo Setting NTFS behavior: disablelastaccess 1...
-fsutil behavior set disablelastaccess 1
-
-echo.
-echo [DONE] Unnecessary disk write overhead on file read eliminated.
-echo.
-if /i "%~1" neq "/nopause" pause
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0src\Win11Janitor.ps1" -Action Apply -Module 09 %*
+set "RESULT=%ERRORLEVEL%"
+endlocal & exit /b %RESULT%

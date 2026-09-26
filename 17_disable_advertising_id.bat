@@ -9,6 +9,6 @@ if not exist "%TEMP%" (
     echo [ERROR] Cannot create D: workspace temp directory.
     endlocal & exit /b 10
 )
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0src\Win11Janitor.ps1" -Action Apply -Module 02 %*
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0src\Win11Janitor.ps1" -Action Apply -Module 17 %*
 set "RESULT=%ERRORLEVEL%"
 endlocal & exit /b %RESULT%
