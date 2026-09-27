@@ -1,11 +1,11 @@
-# Windows 11 Clean & Atlas OS–Inspired 17-Module Optimization Suite ⚡
+# Windows 11 Clean & Atlas OS–Inspired 23-Module Optimization Suite ⚡
 
 [![Platform: Windows 11](https://img.shields.io/badge/Platform-Windows%2011-0078D6?logo=windows)](https://www.microsoft.com/windows/windows-11)
 [![Status: Validation Pending](https://img.shields.io/badge/Status-Validation%20Pending-orange)](#-validation--performance)
-[![Modules: 17](https://img.shields.io/badge/Modules-17%20Modular-blueviolet)](#-complete-17-module-architecture-matrix)
+[![Modules: 23](https://img.shields.io/badge/Modules-23%20Modular-blueviolet)](#-complete-17-module-architecture-matrix)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A modular, reversible **Windows 11 privacy and configuration suite**, inspired by the modular approach of [Atlas OS](https://github.com/Atlas-OS/Atlas) but not affiliated with it. It works on **existing Windows installations without an OS reinstall or destructive debloating**. Its five-module Safe profile limits unnecessary data collection; five functional changes are opt-in, and seven unverified or potentially counterproductive performance tweaks are retained as audit-only entries.
+A modular, reversible **Windows 11 privacy and configuration suite**, inspired by the modular approach of [Atlas OS](https://github.com/Atlas-OS/Atlas) but not affiliated with it. It works on **existing Windows installations without an OS reinstall or destructive debloating**. Its five-module Safe profile limits unnecessary data collection; eleven functional changes are opt-in, and seven unverified or potentially counterproductive performance tweaks are retained as audit-only entries. The six newer modules include explicit Windows edition/build and feature checks.
 
 **Scope:** this release makes no unmeasured FPS, input-latency or throughput promises. The elevated Apply/Restore workflow still requires acceptance testing on a disposable Windows VM before being described as production-ready.
 
@@ -34,6 +34,23 @@ Every numbered batch file is a compatibility launcher for the centralized PowerS
 | **15** | `15_ultimate_performance_coreparking.bat` | CPU / Power | **Audit-only** — Preserves adaptive CPU core parking and the existing power plan. |
 | **16** | `16_memory_management_and_raw_input.bat` | Input / Desktop | **Optional** — Disables current-user pointer acceleration and transparency only; preserves memory compression and kernel paging. |
 | **17** | `17_disable_advertising_id.bat` | Privacy / Advertising | **Safe** — Disables the current user's Windows advertising identifier. |
+
+---
+
+## 🧩 Six Additional Opt-in Modules (18–23)
+
+These modules use the same centralized PowerShell engine. They do not change the default five-module Safe profile and have no new legacy batch wrappers. Unsupported edition/build or absent Edge capabilities are reported as `UNSUPPORTED`; explicitly requesting an unsupported module refuses mutation.
+
+| # | Module | Availability | Reversible change / functional trade-off |
+| :---: | :--- | :--- | :--- |
+| 18 | Search highlights | Pro/Enterprise/Education, build 22621+ | Disable dynamic search highlights; local file/app search remains available. |
+| 19 | Cloud search | Pro/Enterprise/Education | Prevent Windows Search from querying cloud sources such as OneDrive/SharePoint. |
+| 20 | Widgets | Pro/Enterprise/Education | Disable the Widgets experience using the device policy. |
+| 21 | Edge background | Edge installed | Stop Edge background apps after the last browser window closes. |
+| 22 | Edge startup boost | Edge installed | Disable preloading; Edge may take longer to launch. |
+| 23 | Cross-device clipboard | Pro/Enterprise/Education | Prevent clipboard synchronization while retaining local history. |
+
+These are functionality/privacy controls, not proven FPS optimizations. Module metadata includes impact and upstream policy references, returned in JSON Plan output.
 
 ---
 
@@ -68,7 +85,28 @@ pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Restore -Snapshot 'D:\win11
 pwsh -NoProfile -File .\src\Win11Janitor.ps1 -Action Restore -Snapshot 'D:\win11janitor\.workspace\backups\YOUR_SNAPSHOT.json'
 ```
 
-**Important:** Elevated `HKCU` changes affect the account running the process. If UAC switches to a different administrator account, the current-user privacy settings affect that administrator, not your normal account.
+**Important:** Elevated `HKCU` operations now check the interactive Explorer account and refuse to change another account's registry settings. For intentionally headless sessions without Explorer, pass `-ExpectedUserSid` matching `whoami /user`; this is not a cross-account override. Machine-only modules do not require an Explorer session.
+
+### Hardware, Startup and Interrupt Inventory
+
+Run `RUN_DIAGNOSTICS.bat` for a read-only inventory saved to `D:\win11janitor\.workspace\benchmarks`. The individual probes report `UNAVAILABLE` instead of fabricating absent sensor readings. Startup command lines and device serial numbers are deliberately excluded from normal output.
+
+```powershell
+pwsh -NoProfile -File .\src\Diagnostics.ps1 -Category Hardware -Json
+pwsh -NoProfile -File .\src\Diagnostics.ps1 -Category Interrupts -Json
+pwsh -NoProfile -File .\src\Diagnostics.ps1 -Category All -Save -Json
+```
+
+### Performance Lab (PresentMon CSV)
+
+Analyze captured `MsBetweenPresents` values and compare the dominant swap chain. The tool reports estimated present cadence, p95/p99 frame times and a slowest-one-percent FPS estimate. It cannot establish comparable workloads from CSV alone, nor does it claim measured display FPS.
+
+```powershell
+pwsh -NoProfile -File .\src\PerformanceLab.ps1 -Action Analyze -InputCsv 'D:\win11janitor\.workspace\benchmarks\captures\baseline.csv' -Json
+pwsh -NoProfile -File .\src\PerformanceLab.ps1 -Action Compare -InputCsv 'D:\win11janitor\.workspace\benchmarks\captures\baseline.csv' -CandidateCsv 'D:\win11janitor\.workspace\benchmarks\captures\candidate.csv' -Save -Json
+```
+
+Optional Capture uses a separately reviewed PresentMon console executable placed at `D:\win11janitor\.workspace\tools\PresentMon.exe`. Supply the independently verified SHA-256 using `-ExpectedSha256`, the exact game executable with `-ProcessName`, and `-Action Capture`; no binary is downloaded automatically. Captures are limited to 10–180 seconds and saved only to the project workspace. See [Performance Lab CLI](https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md).
 
 ---
 
@@ -96,9 +134,9 @@ Unlike generic "restore Windows defaults" scripts, the new engine captures **you
 3. Restore from an elevated terminal using the exact same path.
 4. If you applied multiple overlapping snapshots, restore the **newest first**.
 
-On a caught Apply failure, the engine attempts to roll back affected targets and reports any restoration failures. Power loss or forced termination may still require a manual Restore. Never substitute guessed Windows defaults for the saved state.
+New schema-v2 snapshots also record verified post-apply target states. Before Restore, the engine checks that each target still matches either its saved original or the recorded applied state. An external change returns exit code `4` before restoration; `-ForceRestore` explicitly bypasses that conflict guard. Legacy v1 snapshots remain readable, but HKCU restoration requires `-ExpectedUserSid` because older snapshots lack account binding. On a caught Apply failure, the engine attempts to roll back touched targets. After power loss or forced termination, manual Restore may require `-ForceRestore` if the incomplete snapshot has no verified post-apply state.
 
-**Exit codes:** `0` = success; `1` = execution/rollback failure; `2` = partial apply; `3` = unsupported audit-only operation. Inspect individual results rather than trusting a headline alone.
+**Exit codes:** `0` = success; `1` = execution/rollback failure; `2` = partial result; `3` = unsupported/audit-only operation; `4` = restore conflict. Inspect individual results rather than trusting a headline alone.
 
 ---
 
@@ -121,4 +159,4 @@ Technical references: [Windows diagnostic-data policies](https://learn.microsoft
 
 ## 📄 License
 
-This suite is open-source under the [MIT License](LICENSE). See [CHANGELOG.md](CHANGELOG.md) for changes and `docs/superpowers/` for the engineering design and implementation plan.
+This suite is open-source under the [MIT License](LICENSE). See [CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md), [SECURITY.md](SECURITY.md) and `docs/superpowers/` for engineering plans and the source-backed module contract. No third-party application code or binaries are vendored.

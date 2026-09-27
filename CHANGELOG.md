@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — 2026-09-27
+
+- Document a source-backed modular expansion plan, security contract and phased roadmap.
+- Extend the catalog from 17 to 23 modules with six explicitly opt-in, edition/build/Edge-gated Windows Search, Widgets, browser background and clipboard controls.
+- Add Windows capability detection; unsupported modules are visible in Plan/Audit and refuse explicit Apply instead of silently writing ineffective policies.
+- Add read-only hardware, startup and interrupt inventory with per-probe failure status and D-only optional JSON exports.
+- Add the optional, hash-pinned PresentMon adapter plus bounded CSV import, frame-time analysis and A/B reports; no unverified performance claims.
+- Add SID-aware HKCU safety and guarded schema-v2 snapshots containing verified post-apply state; detect external changes before Restore.
+- Add `RUN_DIAGNOSTICS.bat` and `RUN_PERFORMANCE_LAB.bat`; preserve the existing 17 compatibility launchers and the professional README structure.
+- Add Windows local, non-mutating tests for the new module matrix, diagnostics, account safety, snapshot comparisons and deterministic performance parsing.
+- Preserve all project-created caches, temporary files, reports, logs and snapshots under `D:\win11janitor\.workspace`.
+
+**Not yet production-accepted:** no elevated Apply/Restore VM matrix has been executed; real PresentMon capture and process/session or vendor GPU adapters require separate hardware/VM validation.
+
 ## Unreleased — 2026-09-26
 
 - Preserve the original unversioned local scripts in baseline commit `863989c` on `baseline/original`.

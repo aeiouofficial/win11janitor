@@ -14,6 +14,8 @@ param(
     [string]$Profile = 'Safe',
     [string]$Module = 'All',
     [string]$Snapshot = '',
+    [string]$ExpectedUserSid = '',
+    [switch]$ForceRestore,
     [switch]$WhatIf,
     [switch]$Json
 )
@@ -24,16 +26,23 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptDir '..'))
 if (-not ([IO.Path]::GetPathRoot($repoRoot) -ieq 'D:\')) {
     throw 'Project workspace must be on D:; refusing any fallback to C:.'
 }
+ . (Join-Path $scriptDir 'Workspace.ps1')
 $workDir = Join-Path $repoRoot '.workspace'
 $tmpDir = Join-Path $workDir 'tmp'
 $backupDir = Join-Path $workDir 'backups'
 $logDir = Join-Path $workDir 'logs'
+[void](Assert-JanitorWorkspacePath -Path $repoRoot -AllowedRoot 'D:\')
+foreach ($path in @($workDir,$tmpDir,$backupDir,$logDir)) {
+    [void](Assert-JanitorWorkspacePath -Path $path -AllowedRoot $repoRoot)
+}
 [void](New-Item -ItemType Directory -Path $tmpDir -Force -ErrorAction Stop)
 $env:TEMP = $tmpDir
 $env:TMP = $tmpDir
 $env:TMPDIR = $tmpDir
 . (Join-Path $scriptDir 'Modules.ps1')
+. (Join-Path $scriptDir 'Capabilities.ps1')
 . (Join-Path $scriptDir 'State.ps1')
+. (Join-Path $scriptDir 'AccountSafety.ps1')
 . (Join-Path $scriptDir 'TargetDescription.ps1')
 $traceId = [guid]::NewGuid().ToString('N')
 $report = [ordered]@{
@@ -95,6 +104,10 @@ function Load-Snapshot {
     param([string]$File)
     if ([string]::IsNullOrWhiteSpace($File)) { throw '-Snapshot is required for Restore.' }
     $full = [IO.Path]::GetFullPath($File)
+    [void](Assert-JanitorWorkspacePath -Path $full -AllowedRoot $backupDir)
+    if ([IO.Path]::GetDirectoryName($full) -ine [IO.Path]::GetFullPath($backupDir).TrimEnd('\')) {
+        throw 'Restore accepts only direct snapshot files inside the backups folder.'
+    }
     $prefix = [IO.Path]::GetFullPath($backupDir).TrimEnd('\') + '\'
     if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Restore accepts only D:\win11janitor\.workspace\backups\*.json.'
@@ -104,7 +117,7 @@ function Load-Snapshot {
         throw 'Snapshot does not exist or is not a JSON snapshot.'
     }
     $data = Get-Content -LiteralPath $full -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    if ($data.schemaVersion -ne 1 -or $data.root -ine $repoRoot -or
+    if ($data.schemaVersion -notin @(1,2) -or $data.root -ine $repoRoot -or
         @($data.entries).Count -eq 0) {
         throw 'Snapshot schema, workspace or entry count is invalid.'
     }
@@ -134,10 +147,34 @@ try {
             Emit-Report 0
         }
         if (-not (Is-Elevated)) { throw 'Administrator rights required for Restore.' }
+        Assert-SnapshotAccount -Data $data -ExpectedUserSid $ExpectedUserSid
         [void](New-Item -ItemType Directory -Path $logDir -Force)
         $lock = [IO.File]::Open((Join-Path $workDir 'janitor.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
         $restoreFailed = $false
         try {
+            $conflicts=@()
+            foreach ($entry in @($data.entries)) {
+                $op=Find-Operation $entry
+                $current=Read-Target $op $entry.module
+                $sameOriginal=Test-SameTargetState $op $current $entry
+                $expected=$null
+                if ($entry.PSObject.Properties.Name -contains 'expectedState') {
+                    $expected=$entry.expectedState
+                }
+                $sameExpected=($null -ne $expected -and
+                    (Test-SameTargetState $op $current $expected))
+                if (-not $sameOriginal -and -not $sameExpected -and -not $ForceRestore) {
+                    $conflicts += "$($entry.module)/$($entry.name)"
+                }
+            }
+            if ($conflicts.Count -gt 0) {
+                $report.status='CONFLICT'
+                $report.results += [ordered]@{
+                    id='RESTORE'; status='CONFLICT'; description='External changes detected'
+                    detail=($conflicts -join ', ')
+                }
+                Emit-Report 4
+            }
             $entries = @($data.entries)
             [array]::Reverse($entries)
             foreach ($entry in $entries) {
@@ -185,22 +222,44 @@ try {
         }
     }
     if ($selected.Count -eq 0) { throw 'No modules selected.' }
+    $capabilities = Get-JanitorCapabilities
+    $report.capabilities = [ordered]@{
+        build=$capabilities.build; edition=$capabilities.edition
+        client=$capabilities.client; edgePresent=$capabilities.edgePresent
+    }
+    $support = @{}
+    foreach ($item in $selected) {
+        $support[$item.id] = [string](Get-ModuleSupportReason $item $capabilities)
+    }
     if ($Action -eq 'Plan' -or ($Action -eq 'Apply' -and $WhatIf)) {
         $blocked = $false
         foreach ($item in $selected) {
-            $status = if ($item.mode -eq 'AuditOnly') { 'AUDIT_ONLY' } elseif ($WhatIf) { 'WOULD_APPLY' } else { 'PLANNED' }
-            if ($Action -eq 'Apply' -and $item.mode -eq 'AuditOnly') { $blocked=$true }
+            $reason = $support[$item.id]
+            $status = if ($reason) { 'UNSUPPORTED' } elseif ($item.mode -eq 'AuditOnly') { 'AUDIT_ONLY' } elseif ($WhatIf) { 'WOULD_APPLY' } else { 'PLANNED' }
+            if ($Action -eq 'Apply' -and ($item.mode -eq 'AuditOnly' -or
+                ($reason -and $Module -ine 'All'))) { $blocked=$true }
             $report.results += [ordered]@{
                 id=$item.id; status=$status; description=$item.description
-                detail=("Targets: " + @($item.operations).Count)
+                detail=if ($reason) { $reason } else { "Targets: $(@($item.operations).Count)" }
+                impact=$item.impact; reference=$item.reference
                 targets=@($item.operations | ForEach-Object { Describe-Target $_ })
             }
         }
         if ($blocked) { $report.status='ERROR'; Emit-Report 3 }
+        if ($Action -eq 'Apply' -and @($report.results | Where-Object status -eq 'UNSUPPORTED').Count -gt 0) {
+            $report.status='PARTIAL'; Emit-Report 2
+        }
         Emit-Report 0
     }
     if ($Action -eq 'Audit') {
         foreach ($item in $selected) {
+            if ($support[$item.id]) {
+                $report.results += [ordered]@{
+                    id=$item.id; status='UNSUPPORTED'; description=$item.description
+                    detail=$support[$item.id]
+                }
+                continue
+            }
             if ($item.mode -eq 'AuditOnly') {
                 $report.results += [ordered]@{
                     id=$item.id; status='AUDIT_ONLY'
@@ -237,11 +296,30 @@ try {
         }
         $report.status='ERROR'; Emit-Report 3
     }
+    $excluded = @($selected | Where-Object { $support[$_.id] })
+    if ($excluded.Count -gt 0) {
+        foreach ($item in $excluded) {
+            $report.results += [ordered]@{
+                id=$item.id; status='UNSUPPORTED'; description=$item.description
+                detail=$support[$item.id]
+            }
+        }
+        if ($Module -ine 'All') {
+            $report.status='ERROR'; Emit-Report 3
+        }
+        $selected = @($selected | Where-Object { -not $support[$_.id] })
+        if ($selected.Count -eq 0) {
+            $report.status='ERROR'; Emit-Report 3
+        }
+    }
     if (-not (Is-Elevated)) { throw 'Administrator rights required for Apply.' }
+    $targetOps=@()
+    foreach ($item in $selected) { $targetOps += @($item.operations) }
+    $userSid=Assert-JanitorAccountContext -Targets $targetOps -ExpectedUserSid $ExpectedUserSid
     [void](New-Item -ItemType Directory -Path $backupDir -Force)
     [void](New-Item -ItemType Directory -Path $logDir -Force)
     $lock = [IO.File]::Open((Join-Path $workDir 'janitor.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
-    $exitCode = 0
+    $exitCode = if ($excluded.Count -gt 0) { 2 } else { 0 }
     $touched = @()
     try {
         $entries = @()
@@ -253,8 +331,9 @@ try {
         $stamp = [datetime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
         $snapshotFile = Join-Path $backupDir "$stamp-$traceId.json"
         $snapshotObj = [ordered]@{
-            schemaVersion=1; createdUtc=[datetime]::UtcNow.ToString('o')
-            traceId=$traceId; root=$repoRoot; modules=@($selected | ForEach-Object id)
+            schemaVersion=2; createdUtc=[datetime]::UtcNow.ToString('o')
+            state='PREPARED'; userSid=$userSid; traceId=$traceId
+            root=$repoRoot; modules=@($selected | ForEach-Object id)
             entries=$entries
         }
         $snapshotJson = $snapshotObj | ConvertTo-Json -Depth 15
@@ -277,7 +356,10 @@ try {
                     if (-not (Test-Target $op $current)) {
                         throw "Post-apply verification failed: $($item.id)/$($op.Name)"
                     }
+                } else {
+                    $current = Read-Target $op $item.id
                 }
+                $orig | Add-Member -NotePropertyName expectedState -NotePropertyValue $current -Force
                 $outcomes += $outcome
                 Write-Journal 'Info' 'Apply' $item.id $outcome $op.Name
             }
@@ -288,6 +370,11 @@ try {
                 detail=($outcomes -join ',')
             }
         }
+        $snapshotObj.state='APPLIED'
+        $snapshotObj.appliedUtc=[datetime]::UtcNow.ToString('o')
+        $completedJson=$snapshotObj | ConvertTo-Json -Depth 18
+        [IO.File]::WriteAllText($tempSnapshot,$completedJson,[Text.UTF8Encoding]::new($false))
+        [IO.File]::Replace($tempSnapshot,$snapshotFile,$null)
         $report.status = if ($exitCode -eq 2) { 'PARTIAL' } else { 'APPLIED' }
     } catch {
         $problem = $_.Exception.Message

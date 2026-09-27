@@ -109,11 +109,15 @@ function Restore-Target {
                     New-Item -Path $Entry.path -Force -ErrorAction Stop | Out-Null
                 }
                 New-ItemProperty -LiteralPath $Entry.path -Name $Entry.name -Value $Entry.previousValue -PropertyType $Entry.previousKind -Force -ErrorAction Stop | Out-Null
-            } elseif ($null -ne $key) {
-                if (@($key.GetValueNames()) -contains $Entry.name) {
+            } else {
+                if ($null -eq $key -and $Entry.keyPresent) {
+                    New-Item -Path $Entry.path -Force -ErrorAction Stop | Out-Null
+                    $key = Get-RegistryKeyOrNull -Path $Entry.path
+                }
+                if ($null -ne $key -and @($key.GetValueNames()) -contains $Entry.name) {
                     Remove-ItemProperty -LiteralPath $Entry.path -Name $Entry.name -ErrorAction Stop
                 }
-                if (-not $Entry.keyPresent) {
+                if (-not $Entry.keyPresent -and $null -ne $key) {
                     $key = Get-RegistryKeyOrNull -Path $Entry.path
                     if ($null -ne $key -and @($key.GetValueNames()).Count -eq 0 -and
                         $key.SubKeyCount -eq 0) {
@@ -160,6 +164,7 @@ function Confirm-Restored {
     $current = Read-Target $Op $Original.module
     if ($Op.Kind -eq 'Registry') {
         return ($current.present -eq $Original.present -and
+            $current.keyPresent -eq $Original.keyPresent -and
             ((-not $Original.present) -or
              ([string]$current.previousValue -ceq [string]$Original.previousValue -and
               $current.previousKind -eq $Original.previousKind)))
@@ -179,4 +184,30 @@ function Confirm-Restored {
                   ($Original.previousValue -eq 'Disabled'))))
     }
     return $false
+}
+
+# Compare the complete captured state. This prevents restore from clobbering
+# settings altered by other tools or Group Policy since this snapshot applied.
+function Test-SameTargetState {
+    param([object]$Op, [object]$A, [object]$B)
+    if ([bool]$A.present -ne [bool]$B.present) { return $false }
+    if ($Op.Kind -eq 'Registry' -and
+        $A.PSObject.Properties.Name -contains 'keyPresent' -and
+        $B.PSObject.Properties.Name -contains 'keyPresent' -and
+        [bool]$A.keyPresent -ne [bool]$B.keyPresent) { return $false }
+    if (-not $A.present) { return $true }
+    switch ($Op.Kind) {
+        'Registry' {
+            return (($A.previousKind -ceq $B.previousKind) -and
+                ([string]$A.previousValue -ceq [string]$B.previousValue))
+        }
+        'Service' {
+            return (($A.previousStart -eq $B.previousStart) -and
+                ($A.delayedPresent -eq $B.delayedPresent) -and
+                ($A.previousDelayed -eq $B.previousDelayed) -and
+                ($A.previouslyRunning -eq $B.previouslyRunning))
+        }
+        'Task' { return ($A.previousValue -ceq $B.previousValue) }
+    }
+    throw 'Unsupported target type in preflight comparison.'
 }
