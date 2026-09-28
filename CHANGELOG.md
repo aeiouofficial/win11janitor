@@ -10,9 +10,10 @@
 - Add SID-aware HKCU safety and guarded schema-v2 snapshots containing verified post-apply state; detect external changes before Restore.
 - Add `RUN_DIAGNOSTICS.bat` and `RUN_PERFORMANCE_LAB.bat`; preserve the existing 17 compatibility launchers and the professional README structure.
 - Add Windows local, non-mutating tests for the new module matrix, diagnostics, account safety, snapshot comparisons and deterministic performance parsing.
+- Add P4 session foundation: PowerShell 5.1-compatible Win32 interop for process power-throttling and CPU-set inspection, identity-bound EcoQoS plans, transactional session journals, exact-state Restore and explicit `-Experimental` mutation gating. No game CPU-set/priority mutation or watchdog is enabled yet.
 - Preserve all project-created caches, temporary files, reports, logs and snapshots under `D:\win11janitor\.workspace`.
 
-**Not yet production-accepted:** no elevated Apply/Restore VM matrix has been executed; real PresentMon capture and process/session or vendor GPU adapters require separate hardware/VM validation.
+**Not yet production-accepted:** no elevated Apply/Restore VM matrix has been executed; real PresentMon capture and SessionLab EcoQoS Apply/Restore require separate VM validation. CPU-set writes, game-process priority/affinity, watchdog recovery and vendor GPU adapters remain deferred.
 
 ## Unreleased — 2026-09-26
 

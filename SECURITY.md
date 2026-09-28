@@ -8,6 +8,7 @@ win11janitor changes Windows policy and may require elevation. The D: repository
 - User-scoped changes are bound to the elevated account. When the interactive Explorer owner differs, HKCU mutation is refused; a headless session requires `-ExpectedUserSid` for HKCU operations.
 - Edition/build support and Edge presence must be detected. A successful write of a registry key is not proof a Windows feature honors it.
 - `Diagnostics.ps1` has no mutation path; `PerformanceLab.ps1` analyzes workspace CSV and only launches `PresentMon.exe` when an explicit matching SHA-256 is supplied.
+- `SessionLab.ps1` Plan binds each selected background process to PID + process creation FILETIME + full image path + executable SHA-256 + owner SID. Apply requires that saved plan and `-Experimental`, rechecks all identities/states before the first mutation, and writes the PREPARED session journal first.
 
 ## Local file integrity
 The engine does **not** provide a cryptographic security boundary against a local attacker who can modify the elevated script, the repository or its snapshots. Restrict modification of `D:\win11janitor` to trusted administrators/users, review `git diff` before running elevated, and obtain reviewed releases from the official project.
@@ -18,7 +19,7 @@ On an unexplained conflict (exit 4), inspect the conflicting module/target and G
 For a legacy v1 snapshot containing HKCU operations, include `-ExpectedUserSid` to bind the target account. Machine-only legacy restores remain supported without this flag.
 
 ## Verification boundary
-Automated tests and dry-runs do not execute elevated Apply/Restore on the development PC. The feature branch is not production-accepted until the VM matrix and complete state-diff acceptance gates pass.
+Automated tests and dry-runs do not execute elevated engine Apply/Restore or SessionLab EcoQoS Apply on the development PC. SessionLab native reads and planning have been exercised read-only. The feature branch is not production-accepted until the VM matrix and complete state-diff acceptance gates pass.
 
 ## Reporting
 Report security defects through GitHub private vulnerability reporting when available; otherwise open a minimal issue without credentials, computer identifiers or sensitive logs.

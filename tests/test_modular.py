@@ -241,5 +241,78 @@ class CrossRuntimeContracts(unittest.TestCase):
             nested.rmdir()
 
 
+class SessionLabContracts(unittest.TestCase):
+    def _child(self):
+        import sys
+        return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(45)"])
+
+    def test_session_inspect_is_read_only(self):
+        child = self._child()
+        try:
+            proc = run_file("SessionLab.ps1", "-Action", "Inspect",
+                            "-ProcessId", str(child.pid))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["status"], "OK")
+            self.assertIsNone(payload["plan"])
+            self.assertIsNone(payload["session"])
+            item = payload["results"][0]["processes"][0]
+            self.assertEqual(item["pid"], child.pid)
+            self.assertIn("powerControlMask", item)
+            self.assertIn("powerStateMask", item)
+        finally:
+            child.terminate()
+            child.wait(timeout=10)
+
+    def test_plan_binds_identity_and_preserves_other_power_bits(self):
+        child = self._child()
+        plan_path = None
+        try:
+            proc = run_file("SessionLab.ps1", "-Action", "Plan",
+                            "-BackgroundProcessId", str(child.pid),
+                            "-PlanLifetimeMinutes", "5")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            plan_path = Path(payload["plan"])
+            self.assertTrue(plan_path.is_file())
+            self.assertTrue(str(plan_path).startswith(str(WORKSPACE)))
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            entry = plan["entries"][0]
+            self.assertEqual(entry["pid"], child.pid)
+            self.assertEqual(entry["desiredPowerControlMask"],
+                             entry["originalPowerControlMask"] | 1)
+            self.assertEqual(entry["desiredPowerStateMask"],
+                             entry["originalPowerStateMask"] | 1)
+            self.assertEqual(len(entry["sha256"]), 64)
+            self.assertGreater(entry["creationFileTimeUtc"], 0)
+            self.assertFalse(entry["hasMainWindow"])
+        finally:
+            if plan_path:
+                plan_path.unlink(missing_ok=True)
+            child.terminate()
+            child.wait(timeout=10)
+
+    def test_apply_requires_explicit_experimental_flag(self):
+        proc = run_file("SessionLab.ps1", "-Action", "Apply")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("Experimental", proc.stdout)
+
+    def test_native_session_reader_compiles_on_windows_powershell_51(self):
+        source = str(SRC / "ProcessSessionNative.cs").replace("'", "''")
+        tmp = str(WORKSPACE / "tmp").replace("'", "''")
+        command = (
+            "$env:TEMP='" + tmp + "';$env:TMP=$env:TEMP;"
+            "Add-Type -Path '" + source + "';"
+            "$x=[Win11Janitor.ProcessSessionNative]::ReadCpuSetTopology();"
+            "if($null -eq $x){exit 7}else{exit 0}"
+        )
+        env = dict(os.environ, TEMP=str(WORKSPACE / "tmp"),
+                   TMP=str(WORKSPACE / "tmp"), TMPDIR=str(WORKSPACE / "tmp"))
+        proc = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                               "-Command", command], cwd=ROOT, env=env,
+                              capture_output=True, text=True, timeout=35)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

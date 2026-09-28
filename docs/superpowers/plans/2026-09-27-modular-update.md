@@ -16,7 +16,7 @@ P0: capture branch/baseline, write plan and evidence, document deferred modules,
 P1: capability detection and guarded modules 18-23: Search highlights, cloud search, Widgets, Edge background, Edge startup boost and cross-device clipboard. All are opt-in; policies unsupported on Home are never advertised as applied.
 P2: hardware/software diagnostics (Windows build/edition, CPU/GPU/RAM, physical disks, security feature status, startup inventory, network overview, interrupt-policy audit). Inventory must not change system state or expose serial numbers/user files in normal output.
 P3: safe benchmarking interface: versioned local JSON baseline and comparison, deterministic counters and exports; optional PresentMon adapter requires a verified binary and explicit capture permission. No FPS claims without comparable A/B measurements.
-P4: process/session optimization: per-process reversible EcoQoS and CPU-set experiments; enforce process identity/start-time match, foreground consent, anti-cheat non-interference, and automatic exit/crash recovery before enabling any background service.
+P4: process/session optimization: the first foundation now implements read-only CPU-set topology plus transactional EcoQoS sessions for explicitly selected background processes. Plans bind PID + process creation FILETIME + image path + executable SHA-256 + owner SID, and Apply requires `-Experimental`. Game-process CPU-set/priority writes, automatic exit/crash recovery and persistent background services remain blocked until VM/hardware validation.
 P5: deeper adapters: NVIDIA per-app profile export/restore; GPU interrupt/MSI diagnostics and experimental tuning after vendor driver and rollback tests; workload-specific network, storage and power diagnostics.
 P6: usability: discoverable module picker, support reasons, search, preview, target accounts, A/B charts, per-module restore, update-safe templates and accessible CLI fallback.
 P4-P6 are roadmap items, not shipped behavior unless their gates are actually implemented and tested; no placeholder implementations are allowed.
@@ -27,6 +27,7 @@ P4-P6 are roadmap items, not shipped behavior unless their gates are actually im
 - Detect account mismatch for HKCU if running elevated under a different interactive account; deliberate cross-account changes require a separate future documented workflow.
 - Snapshots saved atomically under D:; reject unallowlisted targets and unexpected snapshot schema. Preflight current target state before Restore to avoid overwriting external policy/driver changes.
 - Hardware probes return explicit `UNAVAILABLE` on access restrictions; never infer chipset topology or policy applicability from marketing names.
+- Session EcoQoS is limited to same-user, same-interactive-session executables without a top-level window, refuses Windows-system executables and anti-cheat path markers, and never accepts a raw PID for Apply: Apply consumes only a fresh saved plan revalidated before mutation.
 - Power-loss mid-Apply: persisted pre-state survives. Apply failures roll back only touched targets and record partial recovery; recovery must not pretend an inaccessible target was restored.
 - Do not copy GPL/AGPL code into MIT project; use independent implementations or compatible MIT code with copyright and notice preservation after review.
 - No CI on GitHub Actions is required; Windows local tests are authoritative until independent isolated VM elevated acceptance is performed.
@@ -38,6 +39,10 @@ P4-P6 are roadmap items, not shipped behavior unless their gates are actually im
 - Edge startup policy: https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/startupboostenabled
 - Windows CPU sets: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemcpusetinformation
 - EcoQoS process API: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessinformation
+- Process power-state readback: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocessinformation
+- Process creation identity: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes
+- CPU-set model and restore semantics: https://learn.microsoft.com/en-us/windows/win32/procthread/cpu-sets and https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocessdefaultcpusets
+- Header constants independently cross-checked against mingw-w64 `processthreadsapi.h`: PROCESS_POWER_THROTTLING_CURRENT_VERSION=1, EXECUTION_SPEED=0x1.
 - Intel PresentMon: https://github.com/GameTechDev/PresentMon (license/release/API review needed before bundling)
 - CapFrameX: https://github.com/CXWorld/CapFrameX (MIT; benchmark inspiration, no code copied)
 - GameShift: https://github.com/lhceist41/GameShift (MIT; claims not treated as validation, no code copied)

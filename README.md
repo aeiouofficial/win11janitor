@@ -108,6 +108,26 @@ pwsh -NoProfile -File .\src\PerformanceLab.ps1 -Action Compare -InputCsv 'D:\win
 
 Optional Capture uses a separately reviewed PresentMon console executable placed at `D:\win11janitor\.workspace\tools\PresentMon.exe`. Supply the independently verified SHA-256 using `-ExpectedSha256`, the exact game executable with `-ProcessName`, and `-Action Capture`; no binary is downloaded automatically. Captures are limited to 10–180 seconds and saved only to the project workspace. See [Performance Lab CLI](https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md).
 
+### Experimental Background Session Lab
+
+`SessionLab.ps1` is the first process-session foundation. **Inspect** and **Plan** are read-only. It can inventory the Windows CPU Sets topology and prepare an EcoQoS plan for explicitly selected background applications. It does not change game priority, game affinity, CPU Sets, timer resolution, IFEO keys or anti-cheat processes.
+
+```powershell
+# Read-only process state + CPU-set topology.
+pwsh -NoProfile -File .\src\SessionLab.ps1 -Action Inspect -ProcessId 1234 -Json
+
+# Create an expiring, identity-bound EcoQoS plan for a background PID.
+pwsh -NoProfile -File .\src\SessionLab.ps1 -Action Plan -BackgroundProcessId 1234 -Json
+
+# Mutation is deliberately two-step and experimental. Use the exact returned plan.
+pwsh -NoProfile -File .\src\SessionLab.ps1 -Action Apply -Plan 'D:\win11janitor\.workspace\sessions\plans\PLAN.json' -Experimental -Json
+
+# Restore the exact original process power-throttling masks.
+pwsh -NoProfile -File .\src\SessionLab.ps1 -Action Restore -Session 'D:\win11janitor\.workspace\sessions\SESSION.json' -Json
+```
+
+Plans bind PID, native creation time, executable path/hash and owner SID, then are revalidated before the first write. Candidates with a top-level window, another owner/session, a Windows-system image or conservative anti-cheat markers are refused. EcoQoS is intended only for background work; it is not an FPS boost. CPU-set topology currently remains read-only. The Apply/Restore path is **not production-accepted until disposable-VM testing is complete**.
+
 ---
 
 ## 🛡️ Exclusions & Security Notice: Why "The Aggressive Tier" Is Excluded

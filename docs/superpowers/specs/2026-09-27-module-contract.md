@@ -22,6 +22,17 @@ For Capture, only `D:\win11janitor\.workspace\tools\PresentMon.exe` may execute;
 PresentMon option source: https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md
 No performance gain is credited to any optimization without repeated matched-scene A/B tests, temperature/power controls and failure reporting.
 
+## Session Lab contract
+`src/SessionLab.ps1` exposes Inspect, Plan, Apply and Restore. Inspect and Plan are non-mutating. Plan accepts only explicit `-BackgroundProcessId` values and records executable SHA-256, native process creation FILETIME, full image path, owner SID, Windows session ID, original ProcessPowerThrottling masks and current default CPU sets. It expires by default after 30 minutes.
+
+A background candidate must be owned by the current Windows SID, live in the same interactive session, have no top-level window, not be a Windows-system executable and not match the conservative anti-cheat path markers. This is a safety filter, not a claim that anti-cheat detection is exhaustive. EcoQoS is the only mutation currently implemented: desired ControlMask/StateMask are original masks OR'd with `PROCESS_POWER_THROTTLING_EXECUTION_SPEED (0x1)`, preserving unrelated throttling flags.
+
+Apply never accepts a PID directly. It requires the direct saved plan under `.workspace\sessions\plans` plus `-Experimental`, re-hashes/re-identifies every process and compares the current power masks with the plan before the first write. A PREPARED session journal is persisted first. Every SetProcessInformation call is followed by native readback; a caught failure restores already-touched processes in reverse order.
+
+Restore binds the running process to the same PID + creation FILETIME + image path + SHA-256 + owner SID. An exited process needs no state restoration because ProcessPowerThrottling is process-local. External divergence blocks the entire restore with exit 4 unless `-ForceRestore`; ForceRestore does not bypass process identity. Game-process HighQoS, priority, affinity, CPU-set writes, timer manipulation and IFEO fallback are not implemented.
+
+The native bridge is `src/ProcessSessionNative.cs`, compiled by PowerShell with TEMP/TMP already redirected to D. It reads GetProcessInformation(ProcessPowerThrottling), GetProcessTimes, QueryFullProcessImageName, GetProcessDefaultCpuSets and GetSystemCpuSetInformation; only SetProcessInformation(ProcessPowerThrottling) is exposed as a mutation. No debug privilege escalation is attempted.
+
 ## Exit codes and release gates
 0 complete; 1 execution failure; 2 partial or unavailable; 3 unsupported operation; 4 restore conflict. No user-visible all-success message may be emitted on partial or rollback failure.
 Every new mutation requires schema tests, mock edition tests, no-mutation dry-runs, real Windows VM Apply/Restore state diff, safe failure injection and documentation. The development laptop must not be used for elevated mutation tests.
