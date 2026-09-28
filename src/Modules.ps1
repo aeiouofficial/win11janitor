@@ -13,9 +13,13 @@ function New-Service {
 }
 $script:Catalog = [ordered]@{}
 function Add-Module {
-    param([string]$Id, [string]$Mode, [string]$Description, [object[]]$Operations)
+    param([string]$Id, [string]$Mode, [string]$Description, [object[]]$Operations,
+          [int]$MinBuild = 22000, [switch]$ProPolicy, [switch]$EdgeRequired,
+          [string]$Impact = '', [string]$Reference = '')
     $script:Catalog[$Id] = [pscustomobject]@{
         id=$Id; mode=$Mode; description=$Description; operations=@($Operations)
+        minBuild=$MinBuild; proPolicy=[bool]$ProPolicy; edgeRequired=[bool]$EdgeRequired
+        impact=$Impact; reference=$Reference
     }
 }
 Add-Module '01' 'Safe' 'Required diagnostic level, preserving stricter preexisting policy' @(
@@ -63,3 +67,23 @@ Add-Module '16' 'Optional' 'Disable current-user pointer acceleration and transp
 Add-Module '17' 'Safe' 'Disable current-user advertising identifier' @(
     (New-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' 'Enabled' 0)
 )
+
+# Additions are opt-in and gated by the documented OS edition/build or Edge installation.
+Add-Module '18' 'Optional' 'Disable search highlights, retaining local search' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'EnableDynamicContentInWSB' 0)
+) -MinBuild 22621 -ProPolicy -Impact 'Removes dynamic Search content; Group Policy precedence applies.' -Reference 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-search'
+Add-Module '19' 'Optional' 'Disable cloud-source queries within Windows Search' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'AllowCloudSearch' 0)
+) -ProPolicy -Impact 'OneDrive/SharePoint results may no longer appear in Windows Search.' -Reference 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-search'
+Add-Module '20' 'Optional' 'Disable Widgets through the supported device policy' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests' 0)
+) -ProPolicy -Impact 'Widgets including its taskbar entry become unavailable.' -Reference 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-newsandinterests'
+Add-Module '21' 'Optional' 'Stop Edge background applications after the browser closes' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' 'BackgroundModeEnabled' 0)
+) -EdgeRequired -Impact 'Edge extensions/background apps will not stay active after browser exit.' -Reference 'https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/backgroundmodeenabled'
+Add-Module '22' 'Optional' 'Disable Microsoft Edge startup boost' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' 'StartupBoostEnabled' 0)
+) -EdgeRequired -Impact 'Edge cold startup may be slower, background resource use may decline.' -Reference 'https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/startupboostenabled'
+Add-Module '23' 'Optional' 'Disable cross-device Clipboard sync while retaining local history' @(
+    (New-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' 'AllowCrossDeviceClipboard' 0)
+) -ProPolicy -Impact 'Clipboard data will not synchronize with your other devices.' -Reference 'https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-privacy'
